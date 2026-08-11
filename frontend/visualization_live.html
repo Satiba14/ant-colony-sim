@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ant Colony Simulation - Phase 3 (Live)</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #14140f;
+    color: #e8e2d0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 12px 40px;
+  }
+  h1 {
+    font-size: 15px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #a8a08a;
+    margin: 0 0 4px;
+  }
+  .subtitle {
+    font-size: 13px;
+    color: #6e6a5c;
+    margin: 0 0 4px;
+  }
+  #connStatus {
+    font-size: 12px;
+    margin-bottom: 16px;
+  }
+  #connStatus.connected { color: #7fb069; }
+  #connStatus.disconnected { color: #e85d5d; }
+  #wrap {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  canvas {
+    background: #1b1b14;
+    border: 1px solid #3a382c;
+    border-radius: 4px;
+  }
+  #panel {
+    width: 260px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .card {
+    background: #1e1e17;
+    border: 1px solid #3a382c;
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+  .card h2 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #8a8570;
+    margin: 0 0 10px;
+    font-weight: 500;
+  }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+  .row:last-child { margin-bottom: 0; }
+  .row .label { color: #a8a08a; }
+  .row .value {
+    font-variant-numeric: tabular-nums;
+    color: #e8e2d0;
+    font-weight: 500;
+  }
+  .value.gold { color: #e0a940; }
+  .value.green { color: #7fb069; }
+  .slider-row { margin-bottom: 12px; }
+  .slider-row:last-child { margin-bottom: 0; }
+  .slider-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #a8a08a;
+    margin-bottom: 4px;
+  }
+  input[type=range] {
+    width: 100%;
+    accent-color: #e0a940;
+  }
+  button {
+    background: #2a2a20;
+    border: 1px solid #4a4736;
+    color: #e8e2d0;
+    font-size: 13px;
+    padding: 9px 0;
+    border-radius: 4px;
+    cursor: pointer;
+    width: 100%;
+    font-weight: 500;
+  }
+  button:hover { background: #34331f; }
+  button:active { transform: scale(0.98); }
+  .btn-row { display: flex; gap: 8px; }
+  .legend {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+    color: #a8a08a;
+  }
+  .legend .item { display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<h1>Ant colony simulation</h1>
+<p class="subtitle">Phase 3 &middot; live, streamed from a FastAPI backend over WebSocket</p>
+<p id="connStatus" class="disconnected">Connecting to backend...</p>
+
+<div id="wrap">
+  <canvas id="canvas" width="700" height="700"></canvas>
+
+  <div id="panel">
+    <div class="card">
+      <h2>Controls</h2>
+      <div class="btn-row" style="margin-bottom: 12px;">
+        <button id="playBtn">Start</button>
+        <button id="resetBtn">Reset</button>
+      </div>
+      <div class="slider-row">
+        <div class="slider-label"><span>Speed</span><span id="speedOut">10 ticks/sec</span></div>
+        <input type="range" id="speedSlider" min="1" max="60" step="1" value="10">
+      </div>
+      <div class="slider-row">
+        <div class="slider-label"><span>Number of ants</span><span id="antsOut">30</span></div>
+        <input type="range" id="antsSlider" min="5" max="100" step="5" value="30">
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Stats (from server)</h2>
+      <div class="row"><span class="label">Ticks elapsed</span><span class="value" id="statTicks">0</span></div>
+      <div class="row"><span class="label">Trips completed</span><span class="value" id="statTrips">0</span></div>
+      <div class="row"><span class="label">Best trip found</span><span class="value gold" id="statBest">-</span></div>
+      <div class="row"><span class="label">Using short gap</span><span class="value green" id="statGap">-</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Legend</h2>
+      <div class="legend">
+        <div class="item"><div class="dot" style="background:#c9a876"></div>Nest</div>
+        <div class="item"><div class="dot" style="background:#7fb069"></div>Food</div>
+        <div class="item"><div class="dot" style="background:#d9a441"></div>Searching ant</div>
+        <div class="item"><div class="dot" style="background:#e85d5d"></div>Ant carrying food</div>
+        <div class="item"><div class="dot" style="background:#5a5540"></div>Wall</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// This file does NOT simulate anything. It only:
+//   1. Connects to the backend over WebSocket
+//   2. Sends control messages (start/pause/reset/speed) when you interact
+//   3. Draws whatever state the backend sends back
+// All the actual ant/pheromone logic lives in the Python backend now.
+
+const GRID_W = 20, GRID_H = 20;
+const CELL = 700 / GRID_W;
+let MAX_PHEROMONE = 40.0;
+
+const ctx = document.getElementById('canvas').getContext('2d');
+const statusEl = document.getElementById('connStatus');
+
+let ws = null;
+let latestState = null;
+
+function connect() {
+  ws = new WebSocket('ws://localhost:8000/ws/simulation');
+
+  ws.onopen = () => {
+    statusEl.textContent = 'Connected to backend';
+    statusEl.className = 'connected';
+  };
+
+  ws.onclose = () => {
+    statusEl.textContent = 'Disconnected - is the backend running? (uvicorn app.main:app --reload)';
+    statusEl.className = 'disconnected';
+  };
+
+  ws.onerror = () => {
+    statusEl.textContent = 'Connection error - is the backend running on port 8000?';
+    statusEl.className = 'disconnected';
+  };
+
+  ws.onmessage = (event) => {
+    latestState = JSON.parse(event.data);
+    draw(latestState);
+    updateStats(latestState);
+  };
+}
+
+function sendAction(action, extra = {}) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action, ...extra }));
+  }
+}
+
+function draw(state) {
+  ctx.fillStyle = '#1b1b14';
+  ctx.fillRect(0, 0, 700, 700);
+
+  const pheromone = state.pheromone;
+  for (let x = 0; x < GRID_W; x++) {
+    for (let y = 0; y < GRID_H; y++) {
+      const p = pheromone[x][y];
+      if (p > 0.05) {
+        const alpha = Math.min(p / MAX_PHEROMONE, 1) * 0.85;
+        ctx.fillStyle = `rgba(224, 169, 65, ${alpha})`;
+        ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+      }
+    }
+  }
+
+  ctx.fillStyle = '#5a5540';
+  for (const [ox, oy] of state.obstacles) {
+    ctx.fillRect(ox * CELL, oy * CELL, CELL, CELL);
+  }
+
+  ctx.fillStyle = '#c9a876';
+  ctx.beginPath();
+  ctx.arc((state.nest[0] + 0.5) * CELL, (state.nest[1] + 0.5) * CELL, CELL * 0.9, 0, 7);
+  ctx.fill();
+
+  ctx.fillStyle = '#7fb069';
+  ctx.beginPath();
+  ctx.arc((state.food[0] + 0.5) * CELL, (state.food[1] + 0.5) * CELL, CELL * 0.9, 0, 7);
+  ctx.fill();
+
+  for (const ant of state.ants) {
+    ctx.fillStyle = ant.hasFood ? '#e85d5d' : '#d9a441';
+    ctx.beginPath();
+    ctx.arc((ant.x + 0.5) * CELL, (ant.y + 0.5) * CELL, CELL * 0.28, 0, 7);
+    ctx.fill();
+  }
+}
+
+function updateStats(state) {
+  document.getElementById('statTicks').textContent = state.tick;
+  document.getElementById('statTrips').textContent = state.stats.tripsCompleted;
+  document.getElementById('statBest').textContent =
+    state.stats.bestLength === null ? '-' : state.stats.bestLength + ' steps';
+  document.getElementById('statGap').textContent =
+    state.stats.shortGapPercent === null ? '-' : state.stats.shortGapPercent + '%';
+}
+
+let running = false;
+document.getElementById('playBtn').addEventListener('click', () => {
+  running = !running;
+  document.getElementById('playBtn').textContent = running ? 'Pause' : 'Start';
+  sendAction(running ? 'start' : 'pause');
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  running = false;
+  document.getElementById('playBtn').textContent = 'Start';
+  const numAnts = parseInt(document.getElementById('antsSlider').value);
+  sendAction('reset', { numAnts });
+});
+
+document.getElementById('speedSlider').addEventListener('input', (e) => {
+  const val = parseInt(e.target.value);
+  document.getElementById('speedOut').textContent = val + ' ticks/sec';
+  sendAction('setSpeed', { ticksPerSecond: val });
+});
+
+document.getElementById('antsSlider').addEventListener('input', (e) => {
+  document.getElementById('antsOut').textContent = e.target.value;
+});
+
+connect();
+</script>
+</body>
+</html>
