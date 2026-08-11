@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ant Colony Simulation - Phase 2</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #14140f;
+    color: #e8e2d0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 12px 40px;
+  }
+  h1 {
+    font-size: 15px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #a8a08a;
+    margin: 0 0 4px;
+  }
+  .subtitle {
+    font-size: 13px;
+    color: #6e6a5c;
+    margin: 0 0 20px;
+  }
+  #wrap {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  canvas {
+    background: #1b1b14;
+    border: 1px solid #3a382c;
+    border-radius: 4px;
+  }
+  #panel {
+    width: 260px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .card {
+    background: #1e1e17;
+    border: 1px solid #3a382c;
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+  .card h2 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #8a8570;
+    margin: 0 0 10px;
+    font-weight: 500;
+  }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+  .row:last-child { margin-bottom: 0; }
+  .row .label { color: #a8a08a; }
+  .row .value {
+    font-variant-numeric: tabular-nums;
+    color: #e8e2d0;
+    font-weight: 500;
+  }
+  .value.gold { color: #e0a940; }
+  .value.green { color: #7fb069; }
+  .slider-row { margin-bottom: 12px; }
+  .slider-row:last-child { margin-bottom: 0; }
+  .slider-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #a8a08a;
+    margin-bottom: 4px;
+  }
+  input[type=range] {
+    width: 100%;
+    accent-color: #e0a940;
+  }
+  button {
+    background: #2a2a20;
+    border: 1px solid #4a4736;
+    color: #e8e2d0;
+    font-size: 13px;
+    padding: 9px 0;
+    border-radius: 4px;
+    cursor: pointer;
+    width: 100%;
+    font-weight: 500;
+  }
+  button:hover { background: #34331f; }
+  button:active { transform: scale(0.98); }
+  .btn-row { display: flex; gap: 8px; }
+  .legend {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+    color: #a8a08a;
+  }
+  .legend .item { display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<h1>Ant colony simulation</h1>
+<p class="subtitle">Phase 2 &middot; live visualization of the stigmergy engine from Phase 1</p>
+
+<div id="wrap">
+  <canvas id="canvas" width="700" height="700"></canvas>
+
+  <div id="panel">
+    <div class="card">
+      <h2>Controls</h2>
+      <div class="btn-row" style="margin-bottom: 12px;">
+        <button id="playBtn">Start</button>
+        <button id="resetBtn">Reset</button>
+      </div>
+      <div class="slider-row">
+        <div class="slider-label"><span>Speed</span><span id="speedOut">4 ticks/frame</span></div>
+        <input type="range" id="speedSlider" min="1" max="20" step="1" value="4">
+      </div>
+      <div class="slider-row">
+        <div class="slider-label"><span>Number of ants</span><span id="antsOut">30</span></div>
+        <input type="range" id="antsSlider" min="5" max="100" step="5" value="30">
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Stats</h2>
+      <div class="row"><span class="label">Ticks elapsed</span><span class="value" id="statTicks">0</span></div>
+      <div class="row"><span class="label">Trips completed</span><span class="value" id="statTrips">0</span></div>
+      <div class="row"><span class="label">Best trip found</span><span class="value gold" id="statBest">-</span></div>
+      <div class="row"><span class="label">Using short gap</span><span class="value green" id="statGap">-</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Legend</h2>
+      <div class="legend">
+        <div class="item"><div class="dot" style="background:#c9a876"></div>Nest</div>
+        <div class="item"><div class="dot" style="background:#7fb069"></div>Food</div>
+        <div class="item"><div class="dot" style="background:#d9a441"></div>Searching ant</div>
+        <div class="item"><div class="dot" style="background:#e85d5d"></div>Ant carrying food</div>
+        <div class="item"><div class="dot" style="background:#5a5540"></div>Wall</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const GRID_W = 20, GRID_H = 20;
+const CELL = 700 / GRID_W;
+const NEST = [0, 10], FOOD = [19, 10];
+const WALL_X = 10;
+const SHORT_GAP = new Set([9, 10, 11]);
+const LONG_GAP = new Set([0, 1]);
+const OBSTACLES = new Set();
+for (let y = 0; y < GRID_H; y++) {
+  if (!SHORT_GAP.has(y) && !LONG_GAP.has(y)) OBSTACLES.add(WALL_X + ',' + y);
+}
+
+const PHEROMONE_DECAY = 0.95;
+const PHEROMONE_DEPOSIT = 5.0;
+const HEURISTIC_POWER = 2;
+const ELITE_BOOST = 20.0;
+let MAX_PHEROMONE = 40.0;
+
+let pheromone, ants, tick, tripsCompleted, bestLength, bestPath, gapHistory;
+let running = false;
+let numAnts = 30;
+let ticksPerFrame = 4;
+
+function dist(ax, ay, bx, by) { return Math.abs(ax - bx) + Math.abs(ay - by); }
+
+function neighborsOf(x, y) {
+  const out = [];
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -1; dy <= 1; dy++) {
+      if (dx === 0 && dy === 0) continue;
+      const nx = x + dx, ny = y + dy;
+      if (nx >= 0 && nx < GRID_W && ny >= 0 && ny < GRID_H && !OBSTACLES.has(nx + ',' + ny)) {
+        out.push([nx, ny]);
+      }
+    }
+  }
+  return out;
+}
+
+function makeAnt() {
+  return {
+    x: NEST[0], y: NEST[1],
+    hasFood: false,
+    pathTaken: [[NEST[0], NEST[1]]],
+    returnPath: []
+  };
+}
+
+function resetSim() {
+  pheromone = Array.from({length: GRID_W}, () => new Array(GRID_H).fill(0));
+  ants = Array.from({length: numAnts}, makeAnt);
+  tick = 0;
+  tripsCompleted = 0;
+  bestLength = null;
+  bestPath = null;
+  gapHistory = [];
+  updateStats();
+  draw();
+}
+
+function deposit(x, y, amount) {
+  pheromone[x][y] = Math.min(pheromone[x][y] + amount, MAX_PHEROMONE);
+}
+
+function chooseMove(ant) {
+  const nbrs = neighborsOf(ant.x, ant.y);
+  const weights = nbrs.map(([nx, ny]) => {
+    const pSignal = 1.0 + pheromone[nx][ny];
+    const d = dist(nx, ny, FOOD[0], FOOD[1]);
+    const hSignal = Math.pow(1.0 / (d + 1), HEURISTIC_POWER);
+    return pSignal * hSignal;
+  });
+  const total = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  for (let i = 0; i < nbrs.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return nbrs[i];
+  }
+  return nbrs[nbrs.length - 1];
+}
+
+function whichGap(path) {
+  for (const [px, py] of path) {
+    if (px === WALL_X && SHORT_GAP.has(py)) return 'short';
+    if (px === WALL_X && LONG_GAP.has(py)) return 'long';
+  }
+  return 'unknown';
+}
+
+function stepAnt(ant) {
+  if (!ant.hasFood) {
+    const [nx, ny] = chooseMove(ant);
+    ant.x = nx; ant.y = ny;
+    ant.pathTaken.push([nx, ny]);
+    if (nx === FOOD[0] && ny === FOOD[1]) {
+      ant.hasFood = true;
+      ant.returnPath = ant.pathTaken.slice().reverse();
+      ant.returnPath.shift();
+    }
+    return null;
+  } else {
+    const [nx, ny] = ant.returnPath.shift();
+    ant.x = nx; ant.y = ny;
+    const tripLength = ant.pathTaken.length - 1;
+    deposit(nx, ny, PHEROMONE_DEPOSIT / tripLength);
+    if (nx === NEST[0] && ny === NEST[1]) {
+      ant.hasFood = false;
+      const completedPath = ant.pathTaken;
+      ant.pathTaken = [[NEST[0], NEST[1]]];
+      ant.returnPath = [];
+      return { length: tripLength, path: completedPath };
+    }
+    return null;
+  }
+}
+
+function simTick() {
+  for (const ant of ants) {
+    const result = stepAnt(ant);
+    if (result) {
+      tripsCompleted++;
+      gapHistory.push(whichGap(result.path));
+      if (gapHistory.length > 20) gapHistory.shift();
+      if (bestLength === null || result.length < bestLength) {
+        bestLength = result.length;
+        bestPath = result.path;
+      }
+    }
+  }
+  if (bestPath) {
+    const eliteAmount = ELITE_BOOST / bestLength;
+    for (const [ex, ey] of bestPath) deposit(ex, ey, eliteAmount);
+  }
+  for (let x = 0; x < GRID_W; x++)
+    for (let y = 0; y < GRID_H; y++)
+      pheromone[x][y] *= PHEROMONE_DECAY;
+  tick++;
+}
+
+const ctx = document.getElementById('canvas').getContext('2d');
+
+function draw() {
+  ctx.fillStyle = '#1b1b14';
+  ctx.fillRect(0, 0, 700, 700);
+
+  for (let x = 0; x < GRID_W; x++) {
+    for (let y = 0; y < GRID_H; y++) {
+      const p = pheromone[x][y];
+      if (p > 0.05) {
+        const alpha = Math.min(p / MAX_PHEROMONE, 1) * 0.85;
+        ctx.fillStyle = `rgba(224, 169, 65, ${alpha})`;
+        ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+      }
+    }
+  }
+
+  ctx.fillStyle = '#5a5540';
+  for (const key of OBSTACLES) {
+    const [ox, oy] = key.split(',').map(Number);
+    ctx.fillRect(ox * CELL, oy * CELL, CELL, CELL);
+  }
+
+  ctx.fillStyle = '#c9a876';
+  ctx.beginPath();
+  ctx.arc((NEST[0] + 0.5) * CELL, (NEST[1] + 0.5) * CELL, CELL * 0.9, 0, 7);
+  ctx.fill();
+
+  ctx.fillStyle = '#7fb069';
+  ctx.beginPath();
+  ctx.arc((FOOD[0] + 0.5) * CELL, (FOOD[1] + 0.5) * CELL, CELL * 0.9, 0, 7);
+  ctx.fill();
+
+  for (const ant of ants) {
+    ctx.fillStyle = ant.hasFood ? '#e85d5d' : '#d9a441';
+    ctx.beginPath();
+    ctx.arc((ant.x + 0.5) * CELL, (ant.y + 0.5) * CELL, CELL * 0.28, 0, 7);
+    ctx.fill();
+  }
+}
+
+function updateStats() {
+  document.getElementById('statTicks').textContent = tick;
+  document.getElementById('statTrips').textContent = tripsCompleted;
+  document.getElementById('statBest').textContent = bestLength === null ? '-' : bestLength + ' steps';
+  if (gapHistory.length > 0) {
+    const shortPct = Math.round(100 * gapHistory.filter(g => g === 'short').length / gapHistory.length);
+    document.getElementById('statGap').textContent = shortPct + '%';
+  } else {
+    document.getElementById('statGap').textContent = '-';
+  }
+}
+
+function frame() {
+  if (running) {
+    for (let i = 0; i < ticksPerFrame; i++) simTick();
+    draw();
+    updateStats();
+  }
+  requestAnimationFrame(frame);
+}
+
+document.getElementById('playBtn').addEventListener('click', () => {
+  running = !running;
+  document.getElementById('playBtn').textContent = running ? 'Pause' : 'Start';
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  running = false;
+  document.getElementById('playBtn').textContent = 'Start';
+  resetSim();
+});
+
+document.getElementById('speedSlider').addEventListener('input', (e) => {
+  ticksPerFrame = parseInt(e.target.value);
+  document.getElementById('speedOut').textContent = ticksPerFrame + ' ticks/frame';
+});
+
+document.getElementById('antsSlider').addEventListener('input', (e) => {
+  numAnts = parseInt(e.target.value);
+  document.getElementById('antsOut').textContent = numAnts;
+  resetSim();
+});
+
+resetSim();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
